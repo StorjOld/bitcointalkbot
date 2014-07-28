@@ -65,7 +65,8 @@ def check_post_strings(url, kwd=KEYWORDS):
         elif hasattr(node, 'children') and ('class' not in node or node['class'] not in ['quote', 'quoteheader']):
             # we don't want quotes to double-report things
             for c in node.children:
-                yield from walk_post_children(c)
+                for s in walk_post_children(c):
+                    yield s
 
     lines = []
     for s in walk_post_children(post):
