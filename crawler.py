@@ -93,7 +93,9 @@ def check_btc_talk(last_post_checked):
                 print('Found a mention, posting to slack...')
                 slack.chat.post_message(SLACK_CHANNEL, MESSAGE_FORMAT.format(entry['title'], entry['id'], '\n'.join(mentions)), username=SLACK_USERNAME)
             last_post_checked = entry['id']
-        except:
+        except Exception as e:
+            if isinstance(e, KeyboardInterrupt):
+                raise e
             print('Unhandled exception, retrying feed parse at exception point')
             traceback.print_exc()
             break
