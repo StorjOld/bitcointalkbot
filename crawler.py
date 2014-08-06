@@ -7,7 +7,9 @@ import feedparser
 import requests
 import slack
 import slack.chat
+import time
 import traceback
+import urllib.parse
 
 KEYWORDS = ['Storj', 'Storj Labs', 'SJCX', 'Storjcoin X', 'Storjcoin']
 PING_TIME = 2  # how many seconds to wait between checking BitcoinTalk
@@ -20,7 +22,7 @@ slack.api_token = '' # get one for your org. at api.slack.com
 SLACK_USERNAME = 'Bitcoin-Talk-Bot'
 SLACK_CHANNEL = '#general'
 
-BITCOIN_TALK_RSS = 'https://bitcointalk.org/index.php?type=rss;action=.xml&limit=1000'
+BITCOIN_TALK_RSS = 'https://bitcointalk.org/index.php?type=rss;action=.xml&limit=100'
 
 def string_find_all(s, needle):
     """A generator that finds all occurences of needle in s."""
@@ -60,6 +62,7 @@ def check_post_strings(url, kwd=KEYWORDS):
     post_id_elem = html.find('a', href=url)
     if post_id_elem is None: # bitcoin talk returning bad HTML
         print('Bad HTML (503?), bailing...')
+        print(html[:100])
         raise Exception('Bad HTML, possible 503')
     post = post_id_elem.find_next('div', {'class': 'post'})
 
@@ -78,14 +81,20 @@ def check_post_strings(url, kwd=KEYWORDS):
     return lines
 
 
+def get_post_id(url):
+    return int(urllib.parse.urlparse(url).fragment.replace('msg', ''))
+
+
 def check_btc_talk(last_post_checked):
     """Handler for RSS and posting to Slack."""
-    feed = feedparser.parse(BITCOIN_TALK_RSS)
-    if feed['bozo']:
-        print('WARNING: XML errors in feed')
+    t = requests.get(BITCOIN_TALK_RSS).text
+    feed = feedparser.parse(t)
+    #if feed['bozo']:
+    #    print('WARNING: XML errors in feed')
+    #    print(t[:100])
     for entry in reversed(feed['entries']):
-        if entry['id'] == last_post_checked:
-            break
+        if 'id' not in entry or (last_post_checked is not None and get_post_id(entry['id']) <= get_post_id(last_post_checked)):
+            continue
         print(entry['id'])
         try:
             mentions = check_post_strings(entry['id'], KEYWORDS)
@@ -99,14 +108,16 @@ def check_btc_talk(last_post_checked):
             print('Unhandled exception, retrying feed parse at exception point')
             traceback.print_exc()
             break
+        time.sleep(1)
     return last_post_checked
 
 def main():
     """Loop and exception handling"""
-    last_post_checked = None
+    last_post_checked = feedparser.parse(BITCOIN_TALK_RSS)['entries'][0]['id'] # don't spend a bunch of time parsing old comments
     while True:
         try:
             last_post_checked = check_btc_talk(last_post_checked)
+            time.sleep(1)
         except Exception as e:
             if isinstance(e, KeyboardInterrupt):
                 print('Being killed! Exiting...')
