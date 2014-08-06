@@ -57,7 +57,11 @@ def check_post_strings(url, kwd=KEYWORDS):
     too hard.
     """
     html = bs4.BeautifulSoup(requests.get(url).text)
-    post = html.find('a', href=url).find_next('div', {'class': 'post'})
+    post_id_elem = html.find('a', href=url)
+    if post_id_elem is None: # bitcoin talk returning bad HTML
+        print('Bad HTML (503?), bailing...')
+        raise Exception('Bad HTML, possible 503')
+    post = post_id_elem.find_next('div', {'class': 'post'})
 
     def walk_post_children(node):
         if isinstance(node, str):
@@ -79,15 +83,21 @@ def check_btc_talk(last_post_checked):
     feed = feedparser.parse(BITCOIN_TALK_RSS)
     if feed['bozo']:
         print('WARNING: XML errors in feed')
-    for entry in feed['entries']:
+    for entry in reversed(feed['entries']):
         if entry['id'] == last_post_checked:
             break
         print(entry['id'])
-        mentions = check_post_strings(entry['id'], KEYWORDS)
-        if len(mentions):
-            print('Found a mention, posting to slack...')
-            slack.chat.post_message(SLACK_CHANNEL, MESSAGE_FORMAT.format(entry['title'], entry['id'], '\n'.join(mentions)), username=SLACK_USERNAME)
-    return feed['entries'][0]['id']
+        try:
+            mentions = check_post_strings(entry['id'], KEYWORDS)
+            if len(mentions):
+                print('Found a mention, posting to slack...')
+                slack.chat.post_message(SLACK_CHANNEL, MESSAGE_FORMAT.format(entry['title'], entry['id'], '\n'.join(mentions)), username=SLACK_USERNAME)
+            last_post_checked = entry['id']
+        except:
+            print('Unhandled exception, retrying feed parse at exception point')
+            traceback.print_exc()
+            break
+    return last_post_checked
 
 def main():
     """Loop and exception handling"""
